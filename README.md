@@ -79,6 +79,10 @@ flow, permission model, or end-to-end transport test yet.
 - [Contributing guide](CONTRIBUTING.md)
 - [Changelog](CHANGELOG.md)
 
+## Support
+
+[Support Tinkora on Ko-fi](https://ko-fi.com/tinkora)
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
