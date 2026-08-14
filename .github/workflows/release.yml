@@ -12,6 +12,8 @@ name: Release
 
 permissions:
   contents: write
+  id-token: write
+  attestations: write
 
 concurrency:
   group: release-${{ github.ref }}
@@ -71,6 +73,15 @@ jobs:
             File.write("release-assets/SBOM.spdx.json", JSON.pretty_generate(sbom) + "\\n")
           '
           (cd release-assets && shasum -a 256 -- * > SHA256SUMS)
+      - name: Attest release provenance
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a
+        with:
+          subject-path: release-assets/*.tar.gz
+      - name: Attest release SBOM
+        uses: actions/attest-sbom@4651f806c01d8637787e274ac3bdf724ef169f34
+        with:
+          subject-path: release-assets/*.tar.gz
+          sbom-path: release-assets/SBOM.spdx.json
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
