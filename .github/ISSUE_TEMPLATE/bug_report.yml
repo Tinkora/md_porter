@@ -1,0 +1,28 @@
+name: Bug report
+description: Report a reproducible defect in md_porter.
+title: "bug: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Provide a minimal Markdown sample that does not contain secrets.
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: List the input and exact steps that demonstrate the problem.
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Browser, operating system, and md_porter version.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and actual behavior
+    validations:
+      required: true
