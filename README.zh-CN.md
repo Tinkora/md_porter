@@ -69,6 +69,10 @@ cargo check -p md_porter_web --target wasm32-unknown-unknown
 - [Contributing guide](CONTRIBUTING.md)
 - [Changelog](CHANGELOG.md)
 
+## 支持
+
+[在 Ko-fi 上支持 Tinkora](https://ko-fi.com/tinkora)
+
 ## 许可证
 
 MIT，见 [LICENSE](LICENSE)。
