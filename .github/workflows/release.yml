@@ -50,6 +50,7 @@ jobs:
           cargo fmt --all -- --check
           cargo test --workspace --locked
           cargo clippy --workspace --all-targets --locked -- -D warnings
+          rustup target add wasm32-unknown-unknown
           cargo check -p md_porter_web --target wasm32-unknown-unknown --locked
           versions="$(cargo metadata --no-deps --locked --format-version 1 | jq -r '.packages[].version' | sort -u)"
           [[ "$versions" == "$VERSION" ]] || { echo "workspace versions $versions do not match $VERSION" >&2; exit 1; }
