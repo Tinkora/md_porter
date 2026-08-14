@@ -1,0 +1,821 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none';">
+<link rel="icon" href="data:,">
+<title>Markdown Porter — local Markdown preview</title>
+<meta name="description" content="Local Markdown preview and safe self-contained HTML export powered by Rust and WebAssembly.">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface2: #21262d;
+    --border: #30363d;
+    --text: #c9d1d9;
+    --text-muted: #8b949e;
+    --text-bright: #f0f6fc;
+    --accent: #58a6ff;
+    --accent-emphasis: #1f6feb;
+    --success: #3fb950;
+    --danger: #f85149;
+    --warning: #d29922;
+    --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+    --toolbar-height: 44px;
+    --status-height: 28px;
+  }
+
+  html, body { height: 100%; overflow: hidden; }
+  body { font-family: var(--font-sans); background: var(--bg); color: var(--text); display: flex; flex-direction: column; }
+
+  /* ── Header ── */
+  header {
+    height: var(--toolbar-height);
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    gap: 8px;
+    flex-shrink: 0;
+    z-index: 10;
+  }
+  .logo {
+    font-family: var(--font-mono);
+    font-size: .9rem;
+    font-weight: 700;
+    color: var(--success);
+    margin-right: 12px;
+    user-select: none;
+  }
+  .toolbar-group {
+    display: flex;
+    gap: 2px;
+    padding: 0 8px;
+    border-right: 1px solid var(--border);
+    height: 28px;
+    align-items: center;
+  }
+  .toolbar-group:last-child { border-right: none; }
+  .tb-btn {
+    min-width: 32px;
+    height: 28px;
+    border-radius: 6px;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: .85rem;
+    font-family: var(--font-mono);
+    font-weight: 600;
+    transition: all .15s;
+    position: relative;
+    padding: 0 4px;
+  }
+  .tb-btn:hover { background: var(--surface2); color: var(--text); }
+  .tb-btn:active { background: var(--border); }
+  .tb-btn[title]::after {
+    content: attr(title);
+    position: absolute;
+    bottom: -22px;
+    left: 50%;
+    transform: translateX(-50%);
+    white-space: nowrap;
+    font-size: .7rem;
+    font-family: var(--font-sans);
+    background: var(--surface2);
+    color: var(--text);
+    padding: 2px 6px;
+    border-radius: 4px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .15s;
+  }
+  .tb-btn:hover[title]::after { opacity: 1; }
+  .tb-sep { width: 1px; height: 16px; background: var(--border); margin: 0 4px; }
+
+  .header-right {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 14px;
+    border-radius: 6px;
+    font-size: .8rem;
+    font-weight: 500;
+    border: 1px solid var(--border);
+    cursor: pointer;
+    transition: all .15s;
+    background: var(--surface2);
+    color: var(--text);
+    font-family: var(--font-sans);
+    white-space: nowrap;
+  }
+  .btn:hover { background: var(--border); }
+  .btn-primary { background: var(--success); color: #0d1117; border-color: var(--success); font-weight: 600; }
+  .btn-primary:hover { background: #2ea043; }
+  .btn-accent { background: var(--accent-emphasis); color: #fff; border-color: var(--accent-emphasis); }
+  .tb-btn:focus-visible, .btn:focus-visible, .modal input:focus-visible, .modal textarea:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .preview-error { color: var(--danger); padding: 16px; }
+
+  /* ── Main split pane ── */
+  main {
+    flex: 1;
+    display: flex;
+    overflow: hidden;
+  }
+  .pane {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .pane-header {
+    height: 30px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    font-size: .75rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    flex-shrink: 0;
+  }
+  .pane:first-child { border-right: 1px solid var(--border); }
+
+  /* ── Editor ── */
+  .editor-wrap {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+  }
+  #editor {
+    width: 100%;
+    height: 100%;
+    border: none;
+    resize: none;
+    padding: 20px 24px;
+    font-family: var(--font-mono);
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--text);
+    background: var(--bg);
+    outline: none;
+    tab-size: 4;
+    overflow-y: auto;
+  }
+  #editor::placeholder { color: var(--text-muted); }
+
+  /* ── Preview ── */
+  .preview-wrap {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px 24px;
+    background: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    .preview-wrap { background: #0d1117; }
+  }
+
+  /* Preview content — GitHub-like styles */
+  .preview-content {
+    font-family: var(--font-sans);
+    font-size: 16px;
+    line-height: 1.6;
+    color: #24292f;
+    word-wrap: break-word;
+    max-width: 860px;
+    margin: 0 auto;
+  }
+  @media (prefers-color-scheme: dark) {
+    .preview-content { color: #c9d1d9; }
+  }
+  .preview-content h1, .preview-content h2, .preview-content h3,
+  .preview-content h4, .preview-content h5, .preview-content h6 {
+    margin-top: 24px;
+    margin-bottom: 16px;
+    font-weight: 600;
+    line-height: 1.25;
+    border-bottom: 1px solid #d8dee4;
+    padding-bottom: .3em;
+  }
+  @media (prefers-color-scheme: dark) {
+    .preview-content h1, .preview-content h2, .preview-content h3,
+    .preview-content h4, .preview-content h5, .preview-content h6 { border-color: #21262d; }
+  }
+  .preview-content h1 { font-size: 2em; }
+  .preview-content h2 { font-size: 1.5em; }
+  .preview-content h3 { font-size: 1.25em; }
+  .preview-content h4 { font-size: 1em; }
+  .preview-content p { margin-bottom: 16px; }
+  .preview-content a { color: #0969da; text-decoration: none; }
+  @media (prefers-color-scheme: dark) {
+    .preview-content a { color: #58a6ff; }
+  }
+  .preview-content a:hover { text-decoration: underline; }
+  .preview-content strong { font-weight: 600; }
+  .preview-content del { text-decoration: line-through; }
+  .preview-content ul, .preview-content ol { padding-left: 2em; margin-bottom: 16px; }
+  .preview-content li { margin-bottom: 4px; }
+  .preview-content li > ul, .preview-content li > ol { margin-bottom: 0; }
+  .preview-content input[type="checkbox"] { margin-right: 6px; vertical-align: middle; }
+  .preview-content blockquote {
+    padding: 0 1em;
+    color: #57606a;
+    border-left: .25em solid #d0d7de;
+    margin-bottom: 16px;
+  }
+  @media (prefers-color-scheme: dark) {
+    .preview-content blockquote { color: #8b949e; border-color: #30363d; }
+  }
+  .preview-content code {
+    padding: .2em .4em;
+    margin: 0;
+    font-size: 85%;
+    background-color: #f6f8fa;
+    border-radius: 6px;
+    font-family: var(--font-mono);
+  }
+  @media (prefers-color-scheme: dark) {
+    .preview-content code { background-color: #161b22; }
+  }
+  .preview-content pre {
+    padding: 16px;
+    overflow: auto;
+    font-size: 85%;
+    line-height: 1.45;
+    background-color: #f6f8fa;
+    border-radius: 6px;
+    margin-bottom: 16px;
+    border: 1px solid #d0d7de;
+  }
+  @media (prefers-color-scheme: dark) {
+    .preview-content pre { background-color: #161b22; border-color: #30363d; }
+  }
+  .preview-content pre code {
+    display: inline;
+    padding: 0;
+    margin: 0;
+    overflow: visible;
+    line-height: inherit;
+    word-wrap: normal;
+    background-color: transparent;
+    border: 0;
+    font-size: 100%;
+  }
+  .preview-content table {
+    border-collapse: collapse;
+    width: 100%;
+    margin-bottom: 16px;
+    display: block;
+    overflow: auto;
+  }
+  .preview-content table th, .preview-content table td {
+    padding: 6px 13px;
+    border: 1px solid #d0d7de;
+  }
+  @media (prefers-color-scheme: dark) {
+    .preview-content table th, .preview-content table td { border-color: #30363d; }
+  }
+  .preview-content table th {
+    font-weight: 600;
+    background-color: #f6f8fa;
+  }
+  @media (prefers-color-scheme: dark) {
+    .preview-content table th { background-color: #161b22; }
+  }
+  .preview-content table tr:nth-child(2n) {
+    background-color: #f6f8fa;
+  }
+  @media (prefers-color-scheme: dark) {
+    .preview-content table tr:nth-child(2n) { background-color: #161b22; }
+  }
+  .preview-content img { max-width: 100%; height: auto; }
+  .preview-content hr {
+    height: .25em;
+    padding: 0;
+    margin: 24px 0;
+    background-color: #d0d7de;
+    border: 0;
+  }
+  @media (prefers-color-scheme: dark) {
+    .preview-content hr { background-color: #30363d; }
+  }
+  .preview-content sup { font-size: 75%; line-height: 0; position: relative; vertical-align: baseline; top: -0.5em; }
+
+  /* ── Status bar ── */
+  footer {
+    height: var(--status-height);
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    font-size: .7rem;
+    color: var(--text-muted);
+    gap: 16px;
+    flex-shrink: 0;
+  }
+  .status-item { display: flex; align-items: center; gap: 4px; }
+  @media (max-width: 720px) {
+    footer { height: auto; min-height: var(--status-height); flex-wrap: wrap; gap: 4px 12px; padding-block: 6px; }
+    footer > span:last-child { width: 100%; margin-left: 0 !important; overflow-wrap: anywhere; }
+  }
+
+  /* ── Modal ── */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgb(0 0 0 / .6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+  }
+  .modal-overlay.hidden { display: none; }
+  .modal {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    min-width: 400px;
+    max-width: 500px;
+  }
+  .modal h3 { font-size: 1rem; margin-bottom: 12px; font-weight: 600; }
+  .modal label { display: block; font-size: .8rem; margin-bottom: 4px; color: var(--text-muted); }
+  .modal input, .modal textarea {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: .8rem;
+    margin-bottom: 12px;
+    outline: none;
+  }
+  .modal input:focus, .modal textarea:focus { border-color: var(--accent); }
+  .modal textarea { min-height: 80px; resize: vertical; }
+  .modal-btns { display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px; }
+
+  /* ── Responsive ── */
+  @media (max-width: 768px) {
+    main { flex-direction: column; }
+    .pane:first-child { border-right: none; border-bottom: 1px solid var(--border); }
+    .pane { flex: none; height: 50%; }
+    header { flex-wrap: wrap; height: auto; padding: 6px; }
+    .toolbar-group {
+      flex: 1 1 100%;
+      order: 3;
+      border-right: none;
+      overflow-x: auto;
+      overflow-y: hidden;
+      padding: 4px 0;
+      scrollbar-width: thin;
+    }
+    .header-right { margin-left: auto; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <span class="logo">md_porter</span>
+  <div class="toolbar-group">
+    <button class="tb-btn" title="Bold (Ctrl+B)" aria-label="Bold" data-action="bold"><b>B</b></button>
+    <button class="tb-btn" title="Italic (Ctrl+I)" aria-label="Italic" data-action="italic"><i>I</i></button>
+    <button class="tb-btn" title="Strikethrough" aria-label="Strikethrough" data-action="strikethrough"><s>S</s></button>
+    <span class="tb-sep"></span>
+    <button class="tb-btn" title="Heading" aria-label="Heading" data-action="heading">H</button>
+    <button class="tb-btn" title="Quote" aria-label="Quote" data-action="quote">&gt;</button>
+    <button class="tb-btn" title="Unordered list" aria-label="Unordered list" data-action="ul">•</button>
+    <button class="tb-btn" title="Ordered list" aria-label="Ordered list" data-action="ol">1.</button>
+    <button class="tb-btn" title="Task list" aria-label="Task list" data-action="task">[]</button>
+    <span class="tb-sep"></span>
+    <button class="tb-btn" title="Link" aria-label="Link" data-action="link">URL</button>
+    <button class="tb-btn" title="Image reference (shown as text)" aria-label="Image reference" data-action="image">IMG</button>
+    <button class="tb-btn" title="Inline code" aria-label="Inline code" data-action="code">&lt;/&gt;</button>
+    <button class="tb-btn" title="Code block" aria-label="Code block" data-action="codeblock">CODE</button>
+    <button class="tb-btn" title="Table" aria-label="Table" data-action="table">TABLE</button>
+    <button class="tb-btn" title="Horizontal rule" aria-label="Horizontal rule" data-action="hr">HR</button>
+  </div>
+  <div class="header-right">
+    <button class="btn" id="btn-sample" title="Load an example document">Sample</button>
+    <button class="btn" id="btn-clear" title="Clear the editor">Clear</button>
+    <button class="btn btn-accent" id="btn-frontmatter" title="Inspect frontmatter">Frontmatter</button>
+    <button class="btn btn-primary" id="btn-export" title="Download a self-contained HTML file">Export HTML</button>
+  </div>
+</header>
+
+<main>
+  <div class="pane" id="editor-pane">
+    <div class="pane-header">Markdown</div>
+    <div class="editor-wrap">
+      <textarea id="editor" placeholder="Write or paste Markdown here..." spellcheck="false"></textarea>
+    </div>
+  </div>
+  <div class="pane" id="preview-pane">
+    <div class="pane-header">Safe preview</div>
+    <div class="preview-wrap">
+      <div class="preview-content" id="preview" aria-live="polite"></div>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <span class="status-item" id="status-chars">Characters: 0</span>
+  <span class="status-item" id="status-words">Words: 0</span>
+  <span class="status-item" id="status-lines">Lines: 0</span>
+  <span class="status-item" id="status-frontmatter" role="status" aria-live="polite">Frontmatter: none</span>
+  <span style="margin-left:auto;">Markdown Porter by Tinkora · local Rust/WASM · no uploads</span>
+</footer>
+
+<!-- Export Modal -->
+<div class="modal-overlay hidden" id="modal-export">
+  <div class="modal">
+    <h3>Export HTML document</h3>
+    <label for="export-title">Document title</label>
+    <input type="text" id="export-title" value="Untitled" placeholder="Enter a document title">
+    <label for="export-css">Custom CSS (optional, 256 KiB maximum)</label>
+    <textarea id="export-css" placeholder="Leave empty to use the embedded stylesheet"></textarea>
+    <div class="modal-btns">
+      <button class="btn" id="btn-modal-cancel">Cancel</button>
+      <button class="btn btn-primary" id="btn-modal-download">Download HTML</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+  // ── WASM Initialization ──
+  let wasmReady = false;
+
+  async function initWasm() {
+    try {
+      const wasm = await import('./pkg/md_porter_web.js');
+      await wasm.default();
+      window.__wasm = wasm;
+      wasmReady = true;
+      console.log('md_porter WASM initialized');
+      updatePreview();
+    } catch (e) {
+      console.error('Failed to load WASM:', e);
+      renderPreviewError('WASM failed to load. Build the package before opening the local preview.');
+    }
+  }
+
+  // ── DOM Elements ──
+  const editor = document.getElementById('editor');
+  const preview = document.getElementById('preview');
+  const statusChars = document.getElementById('status-chars');
+  const statusWords = document.getElementById('status-words');
+  const statusLines = document.getElementById('status-lines');
+  const statusFrontmatter = document.getElementById('status-frontmatter');
+  const modalExport = document.getElementById('modal-export');
+  const exportTitle = document.getElementById('export-title');
+  const exportCss = document.getElementById('export-css');
+
+  // ── Live Preview (debounced) ──
+  let debounceTimer = null;
+  const DEBOUNCE_MS = 150;
+
+  function updatePreview() {
+    if (!wasmReady) return;
+    const md = editor.value;
+    if (md.trim() === '') {
+      preview.replaceChildren();
+      updateStatus(md);
+      return;
+    }
+    try {
+      const html = window.__wasm.wasmMdToHtml(md);
+      renderSafePreview(html);
+    } catch (e) {
+      renderPreviewError(e.message || e);
+    }
+    updateStatus(md);
+  }
+
+  function renderSafePreview(html) {
+    const parsed = new DOMParser().parseFromString(html, 'text/html');
+    const fragment = document.createDocumentFragment();
+    Array.from(parsed.body.childNodes).forEach(node => {
+      fragment.appendChild(document.importNode(node, true));
+    });
+    preview.replaceChildren(fragment);
+  }
+
+  function renderPreviewError(message) {
+    const error = document.createElement('p');
+    error.className = 'preview-error';
+    error.textContent = `Render error: ${message}`;
+    preview.replaceChildren(error);
+  }
+
+  function updateStatus(md) {
+    const chars = md.length;
+    const lines = md === '' ? 0 : md.split('\n').length;
+    const words = md.trim() === '' ? 0 : md.trim().split(/\s+/).length;
+    statusChars.textContent = `Characters: ${chars}`;
+    statusWords.textContent = `Words: ${words}`;
+    statusLines.textContent = `Lines: ${lines}`;
+
+    // Check frontmatter
+    if (wasmReady && md.trimStart().startsWith('---')) {
+      try {
+        const fm = window.__wasm.wasmExtractFrontmatter(md);
+        if (fm && typeof fm === 'object' && Object.keys(fm).length > 0) {
+          const keys = Object.keys(fm).slice(0, 3).join(', ');
+          statusFrontmatter.textContent = `Frontmatter: ${keys}${Object.keys(fm).length > 3 ? '...' : ''}`;
+        } else {
+          statusFrontmatter.textContent = 'Frontmatter: none';
+        }
+      } catch {
+        statusFrontmatter.textContent = 'Frontmatter: invalid';
+      }
+    } else {
+      statusFrontmatter.textContent = 'Frontmatter: none';
+    }
+  }
+
+  editor.addEventListener('input', () => {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(updatePreview, DEBOUNCE_MS);
+  });
+
+  // ── Toolbar Actions ──
+  function insertMarkdown(syntax) {
+    const ta = editor;
+    const start = ta.selectionStart;
+    const end = ta.selectionEnd;
+    const text = ta.value;
+    const selected = text.substring(start, end);
+
+    let replacement = '';
+    let cursorOffset = 0;
+
+    switch (syntax) {
+      case 'bold':
+        replacement = `**${selected || 'bold text'}**`;
+        cursorOffset = selected ? replacement.length : 2;
+        break;
+      case 'italic':
+        replacement = `*${selected || 'italic text'}*`;
+        cursorOffset = selected ? replacement.length : 1;
+        break;
+      case 'strikethrough':
+        replacement = `~~${selected || 'strikethrough text'}~~`;
+        cursorOffset = selected ? replacement.length : 2;
+        break;
+      case 'heading':
+        replacement = `\n## ${selected || 'Heading'}\n`;
+        cursorOffset = selected ? replacement.length : 4;
+        break;
+      case 'quote':
+        replacement = `\n> ${selected || 'Quoted text'}\n`;
+        cursorOffset = selected ? replacement.length : 4;
+        break;
+      case 'ul':
+        replacement = `\n- ${selected || 'List item'}\n`;
+        cursorOffset = selected ? replacement.length : 4;
+        break;
+      case 'ol':
+        replacement = `\n1. ${selected || 'List item'}\n`;
+        cursorOffset = selected ? replacement.length : 5;
+        break;
+      case 'task':
+        replacement = `\n- [ ] ${selected || 'Task item'}\n`;
+        cursorOffset = selected ? replacement.length : 8;
+        break;
+      case 'link':
+        replacement = `[${selected || 'Link text'}](url)`;
+        cursorOffset = selected ? replacement.length - 4 : 1;
+        break;
+      case 'image':
+        replacement = `![${selected || 'Image description'}](url)`;
+        cursorOffset = selected ? replacement.length - 4 : 4;
+        break;
+      case 'code':
+        replacement = `\`${selected || 'code'}\``;
+        cursorOffset = selected ? replacement.length : 2;
+        break;
+      case 'codeblock':
+        replacement = `\n\`\`\`\n${selected || 'code block'}\n\`\`\`\n`;
+        cursorOffset = selected ? replacement.length - 4 : 5;
+        break;
+      case 'table':
+        replacement = `\n| Column 1 | Column 2 | Column 3 |\n|----------|----------|----------|\n| Value 1 | Value 2 | Value 3 |\n`;
+        cursorOffset = 2;
+        break;
+      case 'hr':
+        replacement = `\n---\n`;
+        cursorOffset = replacement.length;
+        break;
+      default: return;
+    }
+
+    ta.value = text.substring(0, start) + replacement + text.substring(end);
+    ta.focus();
+
+    const newPos = start + cursorOffset;
+    ta.setSelectionRange(newPos, newPos);
+
+    // Trigger immediate update
+    clearTimeout(debounceTimer);
+    updatePreview();
+  }
+
+  document.querySelectorAll('.tb-btn[data-action]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      insertMarkdown(btn.dataset.action);
+    });
+  });
+
+  // ── Keyboard Shortcuts ──
+  editor.addEventListener('keydown', (e) => {
+    if (e.ctrlKey || e.metaKey) {
+      switch (e.key.toLowerCase()) {
+        case 'b':
+          e.preventDefault();
+          insertMarkdown('bold');
+          break;
+        case 'i':
+          e.preventDefault();
+          insertMarkdown('italic');
+          break;
+        case 'k':
+          e.preventDefault();
+          insertMarkdown('link');
+          break;
+      }
+    }
+  });
+
+  // ── Sample Markdown ──
+  const SAMPLE_MD = `---
+title: Markdown Porter example
+date: 2026-08-14
+author: Tinkora
+tags: [markdown, wasm, rust]
+---
+
+# Markdown Porter
+
+This local editor renders **safe HTML** with Rust and WebAssembly. Raw HTML is
+escaped, unsafe links are blocked, and image references are shown as text.
+
+## Supported structures
+
+- Tables, task lists, strikethrough, footnotes, and autolinks
+- Fenced code blocks with language classes
+- YAML frontmatter extraction
+
+| Feature | Result |
+|---------|--------|
+| Tables | Rendered locally |
+| Task lists | Visual, not interactive |
+| Remote images | Replaced with an alt-text label |
+
+## Task list
+
+- [x] Write Markdown
+- [x] Review the safe preview
+- [ ] Export a self-contained HTML file
+
+## Code example
+
+Inline code: \`console.log("Hello Markdown Porter")\`
+
+\`\`\`rust
+fn main() {
+    println!("No upload required.");
+}
+\`\`\`
+
+## Link policy
+
+[Project source](https://github.com/Tinkora/md_porter) remains a user-activated
+link. ![Remote image](https://example.com/image.png) is represented as text.
+`;
+
+  document.getElementById('btn-sample').addEventListener('click', () => {
+    editor.value = SAMPLE_MD;
+    clearTimeout(debounceTimer);
+    updatePreview();
+  });
+
+  // ── Clear ──
+  document.getElementById('btn-clear').addEventListener('click', () => {
+    if (confirm('Clear the editor content?')) {
+      editor.value = '';
+      clearTimeout(debounceTimer);
+      updatePreview();
+    }
+  });
+
+  // ── Frontmatter View/Edit ──
+  document.getElementById('btn-frontmatter').addEventListener('click', () => {
+    if (!wasmReady) return;
+    const md = editor.value;
+    try {
+      const fm = window.__wasm.wasmExtractFrontmatter(md);
+      if (fm && typeof fm === 'object' && Object.keys(fm).length > 0) {
+        const entries = Object.entries(fm)
+          .map(([k, v]) => `${k}: ${v}`)
+          .join('\n');
+        alert(`Current frontmatter:\n\n${entries}`);
+      } else {
+        const add = confirm('This document has no frontmatter. Insert a template at the beginning?');
+        if (add) {
+          const template = '---\ntitle: \ndate: \nauthor: \n---\n\n';
+          editor.value = template + editor.value;
+          clearTimeout(debounceTimer);
+          updatePreview();
+        }
+      }
+    } catch (e) {
+      alert('Frontmatter parsing failed: ' + (e.message || e));
+    }
+  });
+
+  // ── Export ──
+  document.getElementById('btn-export').addEventListener('click', () => {
+    modalExport.classList.remove('hidden');
+    // Pre-fill title from frontmatter
+    if (wasmReady) {
+      try {
+        const fm = window.__wasm.wasmExtractFrontmatter(editor.value);
+        if (fm && fm.title) {
+          exportTitle.value = fm.title;
+        } else {
+          exportTitle.value = 'Untitled';
+        }
+      } catch {
+        exportTitle.value = 'Untitled';
+      }
+    }
+  });
+
+  document.getElementById('btn-modal-cancel').addEventListener('click', () => {
+    modalExport.classList.add('hidden');
+  });
+
+  document.getElementById('btn-modal-download').addEventListener('click', () => {
+    if (!wasmReady) return;
+    const md = editor.value;
+    const title = exportTitle.value.trim() || 'Untitled';
+    const css = exportCss.value.trim();
+    let fullHtml;
+    try {
+      fullHtml = window.__wasm.wasmWrapMarkdownDocument(md, title, css);
+    } catch (e) {
+      alert('HTML export failed: ' + (e.message || e));
+      return;
+    }
+
+    const blob = new Blob([fullHtml], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${title.replace(/[^a-zA-Z0-9\u4e00-\u9fff_-]/g, '_')}.html`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    modalExport.classList.add('hidden');
+  });
+
+  // Close modal on backdrop click
+  modalExport.addEventListener('click', (e) => {
+    if (e.target === modalExport) {
+      modalExport.classList.add('hidden');
+    }
+  });
+
+  // ── Start ──
+  initWasm();
+</script>
+</body>
+</html>

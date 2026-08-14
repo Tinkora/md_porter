@@ -1,0 +1,19 @@
+name: Feature request
+description: Propose a focused improvement backed by a real workflow.
+title: "feat: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem and workflow
+      description: What repeated task is blocked or unnecessarily risky today?
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Smallest useful scope
+      description: Describe the narrow behavior that would solve the problem.
+    validations:
+      required: true

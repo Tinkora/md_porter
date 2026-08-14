@@ -1,0 +1,51 @@
+name: Pages
+
+'on':
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-site:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Set up Rust and WASM target
+        run: |
+          rustup toolchain install 1.95.0 --profile minimal --no-self-update
+          rustup target add wasm32-unknown-unknown --toolchain 1.95.0
+          cargo +1.95.0 install wasm-pack --version 0.15.0 --locked
+      - name: Build WASM package
+        env:
+          RUSTUP_TOOLCHAIN: 1.95.0
+        run: wasm-pack build --target web --release crates/md_porter_web --out-dir static/pkg
+      - name: Stage editor site
+        run: |
+          mkdir -p site
+          cp -R crates/md_porter_web/static/. site/
+          touch site/.nojekyll
+      - name: Upload Pages artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: pages-site
+          path: site
+          if-no-files-found: error
+          retention-days: 1
+
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: build-site
+    permissions:
+      contents: read
+      id-token: write
+      pages: write
+    uses: Tinkora/.github/.github/workflows/reusable-pages.yml@54769a0c4137542fff4b3d3267ab10bef0d368a3
+    with:
+      source-artifact-name: pages-site
+      source-subdirectory: .

@@ -1,0 +1,77 @@
+name: Release
+
+'on':
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Full SemVer without the v prefix
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out tagged commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Resolve and validate version
+        id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          REF_NAME: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
+        run: |
+          set -euo pipefail
+          version="$INPUT_VERSION"
+          if [[ "$REF_TYPE" == tag ]]; then
+            [[ "$REF_NAME" =~ ^v([0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?)$ ]] || { echo "tag must be SemVer" >&2; exit 1; }
+            version="${BASH_REMATCH[1]}"
+          fi
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]] || { echo "version must be SemVer" >&2; exit 1; }
+          grep -Fq "## [$version]" CHANGELOG.md || { echo "CHANGELOG.md has no version section" >&2; exit 1; }
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+      - name: Validate Rust release
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          set -euo pipefail
+          cargo fmt --all -- --check
+          cargo test --workspace --locked
+          cargo clippy --workspace --all-targets --locked -- -D warnings
+          cargo check -p md_porter_web --target wasm32-unknown-unknown --locked
+          versions="$(cargo metadata --no-deps --locked --format-version 1 | jq -r '.packages[].version' | sort -u)"
+          [[ "$versions" == "$VERSION" ]] || { echo "workspace versions $versions do not match $VERSION" >&2; exit 1; }
+      - name: Build source and release evidence
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          git archive --format=tar.gz --prefix="md_porter-${VERSION}/" -o "release-assets/md_porter-${VERSION}-source.tar.gz" HEAD
+          cargo metadata --locked --format-version 1 > "release-assets/md_porter-${VERSION}-cargo-metadata.json"
+          printf '%s\n' "{\"commit\":\"$GITHUB_SHA\",\"version\":\"$VERSION\"}" > release-assets/release-metadata.json
+          ruby -rjson -rdigest -e '
+            version = ENV.fetch("VERSION")
+            assets = Dir["release-assets/*"].select { |path| File.file?(path) && !path.end_with?("release-metadata.json") }
+            files = assets.map.with_index { |path, i| {"SPDXID" => "SPDXRef-File-#{i + 1}", "fileName" => "./#{File.basename(path)}", "checksums" => [{"algorithm" => "SHA256", "checksumValue" => Digest::SHA256.file(path).hexdigest}], "licenseConcluded" => "NOASSERTION", "licenseInfoInFiles" => ["NOASSERTION"], "copyrightText" => "NOASSERTION"} }
+            sbom = {"spdxVersion" => "SPDX-2.3", "dataLicense" => "CC0-1.0", "SPDXID" => "SPDXRef-DOCUMENT", "name" => "Tinkora/md_porter #{version}", "documentNamespace" => "https://github.com/Tinkora/md_porter/releases/#{version}", "creationInfo" => {"creators" => ["Tool: Tinkora release workflow"]}, "packages" => [{"SPDXID" => "SPDXRef-Package", "name" => "Tinkora/md_porter", "versionInfo" => version, "downloadLocation" => "NOASSERTION", "filesAnalyzed" => true, "licenseConcluded" => "MIT", "licenseDeclared" => "MIT", "copyrightText" => "NOASSERTION"}], "files" => files}
+            File.write("release-assets/SBOM.spdx.json", JSON.pretty_generate(sbom) + "\\n")
+          '
+          (cd release-assets && shasum -a 256 -- * > SHA256SUMS)
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.value }}
+        run: gh release create "v${VERSION}" release-assets/* --title "md_porter v${VERSION}" --notes-file CHANGELOG.md --prerelease

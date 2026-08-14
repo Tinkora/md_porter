@@ -1,0 +1,56 @@
+{
+  "name": "md_porter",
+  "version": "0.1.0",
+  "description": "Inspect Markdown locally with a bounded, safe GFM subset and export a self-contained HTML document. All processing runs in Rust WASM; no server or upload is required.",
+  "tools": [
+    {
+      "name": "render_markdown",
+      "description": "Convert Markdown to safe HTML with supported GFM features including tables, task lists, strikethrough, footnotes, autolinks, and code blocks. Raw HTML is escaped, unsafe links are disabled, and image references become text to prevent external fetches.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "markdown": {
+            "type": "string",
+            "description": "The Markdown source text to convert to HTML."
+          }
+        },
+        "required": ["markdown"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "export_html_document",
+      "description": "Convert Markdown to a complete self-contained HTML document with embedded CSS. The document can be saved and opened offline without external resources.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "markdown": {
+            "type": "string",
+            "description": "Markdown source text to render and export."
+          },
+          "title": {
+            "type": "string",
+            "default": "Untitled",
+            "description": "Document title for the HTML <title> tag."
+          },
+          "css": {
+            "type": "string",
+            "default": "",
+            "description": "Custom CSS to embed. If empty, uses the default GitHub-like stylesheet with dark mode support."
+          }
+        },
+        "required": ["markdown"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "get_default_css",
+      "description": "Return the default GitHub-like CSS stylesheet that is embedded in exported HTML documents. Supports both light and dark color schemes.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    }
+  ]
+}

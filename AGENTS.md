@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-md_porter is a browser-native Markdown → HTML/PDF converter with live preview. It uses a Rust Markdown parser compiled to WASM. Supports GitHub Flavored Markdown (GFM) with tables, task lists, strikethrough, and code blocks with syntax highlighting. All processing happens in-browser — no server, no uploads.
+md_porter is a browser-native Markdown inspector and safe HTML exporter with live preview. It uses a Rust Markdown parser compiled to WASM. The supported GFM subset includes tables, task lists, strikethrough, footnotes, autolinks, and code blocks. All processing happens in-browser — no server, no uploads.
 
 ## Architecture
 
@@ -20,7 +20,7 @@ md_porter/
 
 | File | Purpose |
 |------|---------|
-| `crates/md_porter_core/src/convert.rs` | `md_to_html`, `md_to_plain_text`, `extract_frontmatter`, `wrap_html_document` |
+| `crates/md_porter_core/src/convert.rs` | `md_to_html`, `md_to_plain_text`, `extract_frontmatter`, `wrap_markdown_document` |
 | `crates/md_porter_core/src/error.rs` | `CoreError` enum with stable machine-readable codes |
 | `crates/md_porter_web/src/lib.rs` | WASM bindings (5 JS exports + init hook) |
 | `crates/md_porter_web/static/index.html` | Full-featured split-pane editor with live preview |
@@ -51,7 +51,7 @@ wasm-pack build --target web crates/md_porter_web
 
 1. **Browser-first**: All Markdown parsing and HTML generation happens in-browser via WASM
 2. **No uploads ever**: Content never leaves the user's browser; no server component
-3. **GFM-complete**: Tables, task lists, strikethrough, footnotes, autolinks, strikethrough via pulldown-cmark
+3. **Bounded GFM subset**: Tables, task lists, strikethrough, footnotes, autolinks, and fenced code blocks via pulldown-cmark
 4. **Zero-config export**: Download self-contained HTML with embedded CSS — no external dependencies
 5. **Live preview**: Real-time WASM rendering as you type
 
@@ -59,10 +59,10 @@ wasm-pack build --target web crates/md_porter_web
 
 ### convert.rs
 
-- `md_to_html(markdown: &str) -> Result<String, CoreError>` — GFM to HTML with all extensions
+- `md_to_html(markdown: &str) -> Result<String, CoreError>` — safe HTML with the supported GFM extensions
 - `md_to_plain_text(markdown: &str) -> Result<String, CoreError>` — strip all formatting to plain text
 - `extract_frontmatter(markdown: &str) -> Result<Option<HashMap<String, String>>, CoreError>` — YAML frontmatter extraction
-- `wrap_html_document(html_body: &str, title: &str, css: &str) -> String` — wrap into self-contained HTML
+- `wrap_markdown_document(markdown: &str, title: &str, css: &str) -> Result<String, CoreError>` — render and wrap into self-contained HTML
 
 ### error.rs
 
@@ -73,18 +73,27 @@ wasm-pack build --target web crates/md_porter_web
 | `CONVERSION_ERROR` | HTML/plain-text conversion failure |
 | `FRONTMATTER_ERROR` | YAML frontmatter deserialization failure |
 
-## GFM Extensions Supported
+## Markdown Features Supported
 
 pulldown-cmark features used:
-- `html` — inline HTML passthrough
-- `simd` — SIMD-accelerated parsing
 - Tables (GFM)
 - Task lists (`- [ ]` / `- [x]`)
 - Strikethrough (`~~text~~`)
 - Footnotes
 - Autolinks
-- Strikethrough
-- Heading attributes
+- Fenced code blocks with language classes
+
+Raw HTML is escaped as text, images are represented by labels, and unsafe link
+schemes are blocked. The parser is intentionally not a complete GitHub renderer.
+
+The core rejects Markdown over 4 MiB and custom CSS over 256 KiB. Unsafe link
+schemes are disabled and Markdown images are represented as text to prevent
+external resource fetches.
+
+## Commit Language
+
+- Write commit subjects and bodies in English and follow Conventional Commits.
+- This repository-level rule overrides any global preference for another commit-message language.
 
 ## Frontend Design Requirement
 

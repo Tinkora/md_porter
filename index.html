@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>md_porter — local Markdown preview</title>
+<meta name="description" content="Local Markdown preview and safe self-contained HTML export. Bounded GFM support, no uploads, no external resources.">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0F172A; --surface: #1E293B; --surface2: #334155;
+    --cta: #22C55E; --cta-hover: #16A34A;
+    --text: #F8FAFC; --text-muted: #94A3B8; --accent: #3B82F6;
+    --font-heading: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --font-body: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  html { scroll-behavior: smooth; }
+  body { font-family: var(--font-body); background: var(--bg); color: var(--text); line-height: 1.7; }
+  h1, h2, h3 { font-family: var(--font-heading); font-weight: 600; }
+  h2 { font-size: 2rem; margin-bottom: 1rem; }
+  h3 { font-size: 1.25rem; margin-bottom: .5rem; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  p { color: var(--text-muted); }
+
+  nav { position: fixed; top: 0; left: 0; right: 0; z-index: 50; background: rgb(15 23 42 / .85); backdrop-filter: blur(12px); border-bottom: 1px solid rgb(51 65 85 / .5); }
+  .nav-inner { max-width: 1200px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; padding: 0 24px; height: 60px; }
+  .nav-left { display: flex; align-items: center; gap: 32px; }
+  .nav-logo { font-family: var(--font-heading); font-size: 1.1rem; font-weight: 700; color: var(--cta); }
+  .nav-links { display: flex; gap: 24px; }
+  .nav-links a { color: var(--text-muted); font-size: .9rem; cursor: pointer; transition: color .2s; }
+  .nav-links a:hover { color: var(--text); text-decoration: none; }
+
+  section { max-width: 1200px; margin: 0 auto; padding: 80px 24px; }
+  .hero { min-height: 100vh; display: flex; align-items: center; padding-top: 60px; }
+  .hero-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: center; }
+  .hero h1 { font-size: 3rem; line-height: 1.2; margin-bottom: 1rem; }
+  .hero h1 span { color: var(--cta); }
+  .hero p { font-size: 1.2rem; max-width: 480px; }
+
+  .btn { display: inline-flex; align-items: center; gap: 8px; padding: 12px 28px; border-radius: 8px; font-family: var(--font-heading); font-size: .95rem; font-weight: 600; cursor: pointer; border: none; transition: all .2s; }
+  .btn-primary { background: var(--cta); color: #0F172A; }
+  .btn-primary:hover { background: var(--cta-hover); box-shadow: 0 4px 20px rgb(34 197 94 / .3); }
+  .btn-outline { background: transparent; border: 1px solid var(--surface2); color: var(--text); }
+  .btn-outline:hover { border-color: var(--cta); color: var(--cta); }
+  .hero-btns { display: flex; gap: 12px; margin-top: 24px; }
+
+  .hero-illustration { background: var(--surface); border-radius: 16px; border: 1px solid var(--surface2); padding: 16px; position: relative; overflow: hidden; }
+  .mockup-bar { display: flex; gap: 6px; margin-bottom: 12px; }
+  .mockup-dot { width: 10px; height: 10px; border-radius: 50%; }
+  .mockup-dot:nth-child(1) { background: #EF4444; } .mockup-dot:nth-child(2) { background: #F59E0B; } .mockup-dot:nth-child(3) { background: #22C55E; }
+  .mockup-split { display: flex; gap: 8px; height: 240px; }
+  .mockup-left { flex: 1; background: #0d1117; border-radius: 8px; padding: 12px; font-family: var(--font-heading); font-size: .7rem; line-height: 1.6; color: #c9d1d9; overflow: hidden; }
+  .mockup-left .md-h1 { color: #58a6ff; font-weight: 700; }
+  .mockup-left .md-code { color: #f97583; }
+  .mockup-left .md-link { color: #58a6ff; text-decoration: underline; }
+  .mockup-left .md-list { color: #79c0ff; }
+  .mockup-right { flex: 1; background: #ffffff; border-radius: 8px; padding: 12px; font-size: .7rem; color: #24292f; overflow: hidden; }
+  .mockup-right .rendered-h1 { font-size: 1.1rem; font-weight: 700; margin-bottom: 6px; }
+  .mockup-right .rendered-p { font-size: .7rem; color: #57606a; margin-bottom: 4px; }
+  .mockup-right .rendered-code { background: #f6f8fa; border-radius: 4px; padding: 2px 6px; font-family: var(--font-heading); font-size: .65rem; color: #cf222e; }
+  .mockup-right .rendered-table { border-collapse: collapse; width: 100%; margin-top: 6px; }
+  .mockup-right .rendered-table th, .mockup-right .rendered-table td { border: 1px solid #d0d7de; padding: 2px 6px; font-size: .6rem; text-align: left; }
+  .mockup-right .rendered-table th { background: #f6f8fa; }
+
+  #features h2 { text-align: center; }
+  #features .subtitle { text-align: center; margin-bottom: 48px; font-size: 1.1rem; }
+  .features-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+  .feature-card { background: var(--surface); border: 1px solid var(--surface2); border-radius: 12px; padding: 28px; transition: all .2s; cursor: pointer; }
+  .feature-card:hover { border-color: var(--cta); box-shadow: 0 4px 16px rgb(34 197 94 / .1); }
+  .feature-card svg { width: 36px; height: 36px; margin-bottom: 16px; color: var(--cta); }
+  .feature-card h3 { font-size: 1.1rem; margin-bottom: .5rem; }
+  .feature-card p { font-size: .95rem; }
+
+  .code-section { background: var(--surface); border-radius: 16px; border: 1px solid var(--surface2); padding: 40px 48px; }
+  .code-block { background: rgb(2 6 23); border-radius: 8px; padding: 20px 24px; margin: 16px 0 24px; font-family: var(--font-heading); font-size: .85rem; line-height: 1.8; color: var(--text); overflow-x: auto; border: 1px solid var(--surface2); }
+  .code-block .comment { color: #6B7280; }
+  .code-block .cmd { color: var(--cta); }
+  .code-block .path { color: #F59E0B; }
+
+  .steps-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; margin-top: 40px; }
+  .step { text-align: center; padding: 28px 20px; background: var(--surface); border-radius: 12px; border: 1px solid var(--surface2); }
+  .step-num { width: 40px; height: 40px; border-radius: 50%; background: var(--cta); color: #0F172A; display: inline-flex; align-items: center; justify-content: center; font-family: var(--font-heading); font-weight: 700; font-size: 1.1rem; margin-bottom: 12px; }
+  .step h3 { font-size: 1.1rem; }
+  .step p { font-size: .9rem; }
+
+  footer { text-align: center; padding: 48px 24px; border-top: 1px solid var(--surface2); }
+  footer p { font-size: .85rem; }
+
+  @media (max-width: 768px) {
+    .hero-grid { grid-template-columns: 1fr; }
+    .hero h1 { font-size: 2rem; }
+    .features-grid, .steps-grid { grid-template-columns: 1fr; }
+    .nav-links { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-inner">
+    <div class="nav-left">
+      <span class="nav-logo">md_porter</span>
+      <div class="nav-links">
+        <a href="#features">Features</a>
+        <a href="#install">Run locally</a>
+        <a href="#usage">Workflow</a>
+        <a href="https://github.com/Tinkora/md_porter" target="_blank" rel="noopener">GitHub</a>
+      </div>
+    </div>
+  </div>
+</nav>
+
+<main>
+  <section class="hero">
+    <div class="hero-grid">
+      <div>
+        <h1>Local Markdown<br><span>preview and export</span></h1>
+        <p>Review bounded GFM structures, inspect frontmatter, and download a self-contained HTML document. Everything runs in your browser.</p>
+        <div class="hero-btns">
+          <a href="#install" class="btn btn-primary" aria-label="Start using md_porter">
+            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/></svg>
+            Run locally
+          </a>
+          <a href="#features" class="btn btn-outline" aria-label="View features">View features →</a>
+        </div>
+      </div>
+      <div class="hero-illustration" aria-hidden="true">
+        <div class="mockup-bar"><span class="mockup-dot"></span><span class="mockup-dot"></span><span class="mockup-dot"></span></div>
+        <div class="mockup-split">
+          <div class="mockup-left">
+            <span class="md-h1"># Hello World</span><br><br>
+            <span>This is a </span><span class="md-code">`md_porter`</span><span> example.</span><br><br>
+            <span class="md-list">- [x]</span><span> Write Markdown</span><br>
+            <span class="md-list">- [ ]</span><span> Review preview</span><br>
+            <span class="md-list">- [ ]</span><span> Export HTML</span><br><br>
+            <span>| Feature | Result |</span><br>
+            <span>|------|------|</span><br>
+            <span>| Safe HTML | Local |</span><br>
+          </div>
+          <div class="mockup-right">
+            <div class="rendered-h1">Hello World</div>
+            <div class="rendered-p">This is a <span class="rendered-code">md_porter</span> example.</div>
+            <div style="margin:8px 0;"><input type="checkbox" checked disabled> Write Markdown</div>
+            <div style="margin:4px 0;"><input type="checkbox" disabled> Review preview</div>
+            <div style="margin:4px 0;"><input type="checkbox" disabled> Export HTML</div>
+            <table class="rendered-table"><tr><th>Feature</th><th>Result</th></tr><tr><td>Safe HTML</td><td>Local</td></tr></table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="features">
+    <h2>What it does</h2>
+    <p class="subtitle">A small, auditable workflow for private notes and developer documentation.</p>
+    <div class="features-grid">
+      <div class="feature-card">
+        <svg fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h12"/><circle cx="18" cy="17" r="3"/></svg>
+        <h3>Bounded GFM subset</h3>
+        <p>Tables, task lists, strikethrough, footnotes, autolinks, and fenced code blocks.</p>
+      </div>
+      <div class="feature-card">
+        <svg fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/></svg>
+        <h3>Split preview</h3>
+        <p>Write on the left and review safe HTML on the right. Rust and WASM run locally.</p>
+      </div>
+      <div class="feature-card">
+        <svg fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+        <h3>Offline HTML export</h3>
+        <p>Download one HTML file with embedded CSS. No JavaScript or remote assets are included.</p>
+      </div>
+      <div class="feature-card">
+        <svg fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+        <h3>YAML frontmatter</h3>
+        <p>Inspect simple key-value metadata at the start of a Markdown document.</p>
+      </div>
+      <div class="feature-card">
+        <svg fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="3"/><path d="M7 8h10M7 12h10M7 16h6"/></svg>
+        <h3>Language classes</h3>
+        <p>Fenced code language classes are preserved for downstream tools; highlighting is not bundled.</p>
+      </div>
+      <div class="feature-card">
+        <svg fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        <h3>Privacy first</h3>
+        <p>All content stays in the browser. There is no server, upload path, or tracking.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="install">
+    <h2>Run locally</h2>
+    <p>You need the Rust toolchain and wasm-pack. The browser page is the product.</p>
+    <div class="code-section">
+      <h3>1. Clone and build</h3>
+      <div class="code-block">
+        <span class="comment"># Clone the repository</span><br>
+        <span class="cmd">git clone</span> <span class="path">https://github.com/Tinkora/md_porter.git</span><br>
+        <span class="cmd">cd</span> md_porter<br><br>
+        <span class="comment"># Build the WebAssembly package</span><br>
+        <span class="cmd">wasm-pack build</span> --target web crates/md_porter_web
+      </div>
+      <h3>2. Start a local server</h3>
+      <div class="code-block">
+        <span class="cmd">cp</span> crates/md_porter_web/pkg/* crates/md_porter_web/static/pkg/<br>
+        <span class="cmd">cd</span> crates/md_porter_web/static<br>
+        <span class="cmd">python3 -m http.server</span> 8080<br><br>
+        <span class="comment"># Open http://localhost:8080 in a browser</span>
+      </div>
+    </div>
+  </section>
+
+  <section id="usage">
+    <h2>Workflow</h2>
+    <p>Three focused steps from Markdown to an offline HTML file.</p>
+    <div class="steps-grid">
+      <div class="step"><span class="step-num">1</span><h3>Write</h3><p>Type or paste Markdown in the editor. Toolbar actions insert common syntax.</p></div>
+      <div class="step"><span class="step-num">2</span><h3>Review</h3><p>Inspect the sanitized preview and frontmatter summary as you work.</p></div>
+      <div class="step"><span class="step-num">3</span><h3>Export</h3><p>Download a self-contained HTML document that opens offline.</p></div>
+    </div>
+  </section>
+
+  <section style="text-align:center;">
+    <div style="background:var(--surface); border:1px solid var(--surface2); border-radius:12px; padding:60px 40px;">
+      <h2 style="font-size:2rem;">Start with a private document</h2>
+      <p style="max-width:500px; margin:16px auto 32px; font-size:1.1rem;">Open source, browser-first, and deliberately small.</p>
+      <div style="display:flex; gap:12px; justify-content:center; flex-wrap:wrap;">
+        <a href="#install" class="btn btn-primary" aria-label="Quick start">
+          <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/></svg>
+          Quick start
+        </a>
+        <a href="https://github.com/Tinkora/md_porter" target="_blank" rel="noopener" class="btn btn-outline" aria-label="View the GitHub repository">
+          <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.3 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61-.546-1.385-1.335-1.755-1.335-1.755-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 21.795 24 17.295 24 12c0-6.63-5.37-12-12-12z"/></svg>
+          GitHub
+        </a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer><p>md_porter by Tinkora · MIT License · <a href="README.zh-CN.md">中文说明</a> · <a href="https://github.com/Tinkora/md_porter">GitHub</a></p></footer>
+
+</body>
+</html>
