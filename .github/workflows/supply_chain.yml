@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   audit:
-    uses: Tinkora/.github/.github/workflows/reusable-supply-chain.yml@54769a0c4137542fff4b3d3267ab10bef0d368a3
+    uses: Tinkora/.github/.github/workflows/reusable-supply-chain.yml@e8958a100fd795846961299c46cba4d7583a19f5
     with:
       working-directory: .
       toolchain: stable
